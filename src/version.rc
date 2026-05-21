@@ -1,0 +1,40 @@
+#include <windows.h>
+
+// Version numbers - update these when bumping version
+// Follows Semantic Versioning: MAJOR.MINOR.PATCH
+#define VERSION_MAJOR      1
+#define VERSION_MINOR      0
+#define VERSION_PATCH      0
+#define VERSION_BUILD      0
+
+#define VER_FILEVERSION    VERSION_MAJOR,VERSION_MINOR,VERSION_PATCH,VERSION_BUILD
+#define VER_FILEVERSION_STR "1.0.0.0\0"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION    VER_FILEVERSION
+PRODUCTVERSION VER_FILEVERSION
+FILEFLAGSMASK  VS_FFI_FILEFLAGSMASK
+FILEFLAGS      0x0L
+FILEOS         VOS__WINDOWS32
+FILETYPE       VFT_DLL
+FILESUBTYPE    VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"  // Language: English (US), Unicode
+        BEGIN
+            VALUE "CompanyName",      "Raziq Revano Ramadani\0"
+            VALUE "FileDescription",  "AFK Auto-Response Plugin for SA-MP\0"
+            VALUE "FileVersion",      VER_FILEVERSION_STR
+            VALUE "InternalName",     "aiassistant\0"
+            VALUE "LegalCopyright",   "Copyright (C) 2026 Raziq Revano Ramadani\0"
+            VALUE "OriginalFilename", "aiassistant.asi\0"
+            VALUE "ProductName",      "afkassistant\0"
+            VALUE "ProductVersion",   VER_FILEVERSION_STR
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200  // English (US), Unicode
+    END
+END

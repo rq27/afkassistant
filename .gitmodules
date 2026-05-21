@@ -1,0 +1,3 @@
+[submodule "vendor/samp-api"]
+	path = vendor/samp-api
+	url = https://github.com/BlastHackNet/SAMP-API

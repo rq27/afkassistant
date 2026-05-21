@@ -1,0 +1,264 @@
+# Release Workflow
+# Manually trigger to create a versioned release with compiled .asi and auto-generated changelog.
+#
+# How to use:
+#   1. Go to Actions > Release > Run workflow
+#   2. Choose version bump type:
+#      - none  → Validate version, compile, upload to GitHub as a pre-release
+#                tagged with the latest commit SHA (e.g. dev-a1b2c3d)
+#      - patch → Bug fix release   (1.0.0 → 1.0.1)
+#      - minor → Feature release   (1.0.0 → 1.1.0)
+#      - major → Breaking release  (1.0.0 → 2.0.0)
+#
+# IMPORTANT: version in CMakeLists.txt and src/version.rc MUST match
+#            before any compile step will proceed.
+#
+# Commit format (Conventional Commits):
+#   feat: add echo plugin          → appears under "Features"
+#   fix: resolve crash on respawn  → appears under "Bug Fixes"
+#   docs: update install guide     → appears under "Documentation"
+#   refactor: clean up hook logic  → appears under "Refactors"
+#   chore: bump dependencies       → appears under "Chores"
+
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump type (none = compile only, publish as pre-release)'
+        required: true
+        default: 'none'
+        type: choice
+        options:
+          - none
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest  # VS 2022 Build Tools + CMake are pre-installed
+
+    defaults:
+      run:
+        shell: bash  # Use Git Bash for cross-platform shell scripts
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0               # Full history for changelog generation
+          submodules: recursive        # Pull vendor/samp-api submodule
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      # ── Version consistency check (always runs, blocks compile if mismatch) ────
+      - name: Validate version consistency
+        id: validate
+        run: |
+          # Read version from CMakeLists.txt
+          CMAKE_VER=$(grep -oP 'project\(aiassistant VERSION \K[0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt)
+          echo "CMakeLists.txt version: $CMAKE_VER"
+
+          # Read version parts from version.rc
+          RC_MAJOR=$(grep -oP '#define VERSION_MAJOR\s+\K[0-9]+' src/version.rc)
+          RC_MINOR=$(grep -oP '#define VERSION_MINOR\s+\K[0-9]+' src/version.rc)
+          RC_PATCH=$(grep -oP '#define VERSION_PATCH\s+\K[0-9]+' src/version.rc)
+          RC_VER="${RC_MAJOR}.${RC_MINOR}.${RC_PATCH}"
+          echo "src/version.rc version: $RC_VER"
+
+          if [ "$CMAKE_VER" != "$RC_VER" ]; then
+            echo "::error::Version mismatch! CMakeLists.txt ($CMAKE_VER) != src/version.rc ($RC_VER)"
+            echo "::error::Please update both files to the same version before running this workflow."
+            exit 1
+          fi
+
+          echo "✅ Versions match: $CMAKE_VER"
+          echo "version=$CMAKE_VER" >> $GITHUB_OUTPUT
+
+      - name: Bump version
+        id: bump
+        if: inputs.bump != 'none'
+        run: |
+          CURRENT="${{ steps.validate.outputs.version }}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+
+          case "${{ inputs.bump }}" in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "major=$MAJOR"         >> $GITHUB_OUTPUT
+          echo "minor=$MINOR"         >> $GITHUB_OUTPUT
+          echo "patch=$PATCH"         >> $GITHUB_OUTPUT
+          echo "New version: $NEW_VERSION"
+
+      - name: Update CMakeLists.txt
+        if: inputs.bump != 'none'
+        run: |
+          NEW="${{ steps.bump.outputs.version }}"
+          sed -i -E "s/project\(aiassistant VERSION [0-9]+\.[0-9]+\.[0-9]+\)/project(aiassistant VERSION $NEW)/" CMakeLists.txt
+
+      - name: Update src/version.rc
+        if: inputs.bump != 'none'
+        run: |
+          MAJOR="${{ steps.bump.outputs.major }}"
+          MINOR="${{ steps.bump.outputs.minor }}"
+          PATCH="${{ steps.bump.outputs.patch }}"
+          NEW="${{ steps.bump.outputs.version }}"
+
+          sed -i -E "s/#define VERSION_MAJOR\s+[0-9]+/#define VERSION_MAJOR      $MAJOR/" src/version.rc
+          sed -i -E "s/#define VERSION_MINOR\s+[0-9]+/#define VERSION_MINOR      $MINOR/" src/version.rc
+          sed -i -E "s/#define VERSION_PATCH\s+[0-9]+/#define VERSION_PATCH      $PATCH/" src/version.rc
+          sed -i -E "s/#define VER_FILEVERSION_STR \"[^\"]+\"/#define VER_FILEVERSION_STR \"$NEW.0\\\\0\"/" src/version.rc
+
+      - name: Build (CMake + VS 2022, 32-bit Release)
+        shell: cmd  # cmake --build requires cmd on windows-latest for proper MSVC env
+        run: |
+          cmake -B build -S . -G "Visual Studio 17 2022" -A Win32
+          cmake --build build --config Release
+
+      - name: Verify build output
+        run: |
+          ls -lh build/Release/aiassistant.asi
+          echo "Build successful"
+
+      # ── none mode: pre-release tagged with commit SHA ─────────────────────────
+      - name: Get short commit SHA
+        if: inputs.bump == 'none'
+        id: sha
+        run: echo "short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Create pre-release (none mode)
+        if: inputs.bump == 'none'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "dev-${{ steps.sha.outputs.short }}"
+          name: "v${{ steps.validate.outputs.version }}-dev.${{ steps.sha.outputs.short }}"
+          body: |
+            ## afkassistant v${{ steps.validate.outputs.version }}-dev.${{ steps.sha.outputs.short }}
+
+            > ⚠️ **Pre-release** — compiled from commit [`${{ steps.sha.outputs.short }}`](https://github.com/${{ github.repository }}/commit/${{ steps.sha.outputs.short }}).
+            > This is not a stable release. Use the latest stable release for production.
+          files: build/Release/aiassistant.asi
+          draft: false
+          prerelease: true
+
+      # ── Release mode: changelog → commit → tag → stable GitHub Release ────────
+      - name: Generate changelog
+        id: changelog
+        if: inputs.bump != 'none'
+        run: |
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+
+          if [ -z "$PREVIOUS_TAG" ]; then
+            RANGE="HEAD"
+          else
+            RANGE="${PREVIOUS_TAG}..HEAD"
+          fi
+
+          echo "Generating changelog for range: $RANGE"
+
+          {
+            echo "changelog<<CHANGELOG_EOF"
+
+            # Features
+            FEATS=$(git log $RANGE --pretty=format:"%s" --grep="^feat" 2>/dev/null | sed 's/^feat[:(]//' | sed 's/^[[:space:]]*//' | sed 's/^/- /')
+            if [ -n "$FEATS" ]; then
+              echo "### Features"
+              echo "$FEATS"
+              echo ""
+            fi
+
+            # Bug Fixes
+            FIXES=$(git log $RANGE --pretty=format:"%s" --grep="^fix" 2>/dev/null | sed 's/^fix[:(]//' | sed 's/^[[:space:]]*//' | sed 's/^/- /')
+            if [ -n "$FIXES" ]; then
+              echo "### Bug Fixes"
+              echo "$FIXES"
+              echo ""
+            fi
+
+            # Documentation
+            DOCS=$(git log $RANGE --pretty=format:"%s" --grep="^docs" 2>/dev/null | sed 's/^docs[:(]//' | sed 's/^[[:space:]]*//' | sed 's/^/- /')
+            if [ -n "$DOCS" ]; then
+              echo "### Documentation"
+              echo "$DOCS"
+              echo ""
+            fi
+
+            # Refactors
+            REFACTORS=$(git log $RANGE --pretty=format:"%s" --grep="^refactor" 2>/dev/null | sed 's/^refactor[:(]//' | sed 's/^[[:space:]]*//' | sed 's/^/- /')
+            if [ -n "$REFACTORS" ]; then
+              echo "### Refactors"
+              echo "$REFACTORS"
+              echo ""
+            fi
+
+            # Chores
+            CHORES=$(git log $RANGE --pretty=format:"%s" --grep="^chore" 2>/dev/null | sed 's/^chore[:(]//' | sed 's/^[[:space:]]*//' | sed 's/^/- /')
+            if [ -n "$CHORES" ]; then
+              echo "### Chores"
+              echo "$CHORES"
+              echo ""
+            fi
+
+            # Other (commits that don't match any conventional prefix)
+            OTHERS=$(git log $RANGE --pretty=format:"%s" --invert-grep --grep="^feat" --grep="^fix" --grep="^docs" --grep="^refactor" --grep="^chore" 2>/dev/null | sed 's/^/- /')
+            if [ -n "$OTHERS" ]; then
+              echo "### Other Changes"
+              echo "$OTHERS"
+              echo ""
+            fi
+
+            echo "CHANGELOG_EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Commit version bump
+        if: inputs.bump != 'none'
+        run: |
+          git add CMakeLists.txt src/version.rc
+          git commit -m "chore: bump version to v${{ steps.bump.outputs.version }}"
+          git push
+
+      - name: Create tag
+        if: inputs.bump != 'none'
+        run: |
+          git tag "v${{ steps.bump.outputs.version }}"
+          git push origin "v${{ steps.bump.outputs.version }}"
+
+      - name: Create GitHub Release
+        if: inputs.bump != 'none'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v${{ steps.bump.outputs.version }}"
+          name: "v${{ steps.bump.outputs.version }}"
+          body: |
+            ## afkassistant v${{ steps.bump.outputs.version }}
+
+            ${{ steps.changelog.outputs.changelog }}
+
+            ---
+            **Full Changelog:** https://github.com/${{ github.repository }}/compare/v${{ steps.validate.outputs.version }}...v${{ steps.bump.outputs.version }}
+          files: build/Release/aiassistant.asi
+          draft: false
+          prerelease: false
