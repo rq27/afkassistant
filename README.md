@@ -8,10 +8,10 @@ Built as an `.asi` file injected into the `gta_sa.exe` process via an ASI Loader
 
 - Monitors SA-MP chat in real-time by hooking `AddMessage`
 - Detects AFK codes in the format `afk 3digits` using regex
-- Automatically replies `/afk <code>` with a random delay (1–15 seconds) to appear natural
+- Automatically replies `/afk <code>` upon detecting an AFK code in chat
 - Hotkey **`Numpad *`** — manually scans the last 19 messages from chat memory and sends a reply
 - Hotkey **`-`** (minus/numpad) — toggles the plugin on/off
-- Supports SA-MP versions **0.3.7-R1**, **R2**, **R3**, **R4**, **R5**, and **0.3.DL**
+- Tested on **SA-MP 0.3.DL** — offsets for **0.3.7-R1**, **R2**, **R3**, **R4**, **R5** are included but untested
 
 ## Usage
 
