@@ -45,7 +45,7 @@ Install [Visual Studio 2022 Build Tools](https://visualstudio.microsoft.com/visu
 ### 2. Clone the repository
 
 ```sh
-git clone --recurse-submodules https://github.com/username/afkassistant.git
+git clone --recurse-submodules https://github.com/rq27/afkassistant.git
 cd afkassistant
 ```
 
