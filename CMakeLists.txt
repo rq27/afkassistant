@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 project(aiassistant VERSION 1.0.0)
+enable_language(RC)
 
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
@@ -31,4 +32,4 @@ target_compile_definitions(aiassistant PRIVATE
     PLUGIN_VERSION_PATCH=${PROJECT_VERSION_PATCH}
 )
 
-target_compile_options(aiassistant PRIVATE /W3)
+target_compile_options(aiassistant PRIVATE /W3)
